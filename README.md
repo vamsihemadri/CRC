@@ -3,10 +3,9 @@ a simple stop and wait logical data link channel between a client and a server u
 DONE:
 concurrent server.
 message converted into bits before sending.
+implement soft closing of ports in server.(graceful release of open socket.)
 
  To do:
  implement CRC.
  implement inclusion of errors .
  implement timer in client.
- implement soft closing of ports in server.(graceful release of open socket.)
-
