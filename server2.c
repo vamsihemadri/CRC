@@ -10,7 +10,13 @@
 #include <sys/types.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>
-
+#include <signal.h> 
+volatile sig_atomic_t flag = 0;
+void my_function(int sig){
+  flag = 1; // set flag
+  printf("cntrl C captured\n");//
+  exit(0);
+}
 void dostuff(int); /* function prototype */
 void error(const char *msg)
 {
@@ -20,6 +26,7 @@ void error(const char *msg)
 
 int main(int argc, char *argv[])
 {
+      signal(SIGINT, my_function);
      int sockfd, newsockfd, portno, pid;
      socklen_t clilen;
      struct sockaddr_in serv_addr, cli_addr;
@@ -52,7 +59,7 @@ int main(int argc, char *argv[])
          if (pid == 0)  {
              close(sockfd);
              dostuff(newsockfd);
-             printf("i am in vamsi\n");
+             //printf("i am in vamsi\n");
              exit(0);
          }
          else close(newsockfd);
@@ -60,14 +67,9 @@ int main(int argc, char *argv[])
      close(sockfd);
      return 0; /* we never get here */
 }
-
-/******** DOSTUFF() *********************
- There is a separate instance of this function 
- for each connection.  It handles all communication
- once a connnection has been established.
- *****************************************/
 void dostuff (int sock)
 {
+  signal(SIGINT, my_function);
    int n;
    char buffer[256];
    while(1){
@@ -77,4 +79,12 @@ void dostuff (int sock)
    printf("Here is the message: %s\n",buffer);
    n = write(sock,"ACK",3);
    if (n < 0) error("ERROR writing to socket");
+   if(flag){
+    printf("Signal Caught\n");
+    shutdown(sock,SHUT_WR);//disables further send operations.
+    read(sock,buffer,256);//read if still data present.
+    close(sock);//finally closing the socket.
+    exit(0);
+    return;
+   }
 }}
