@@ -11,9 +11,17 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <signal.h> 
+#include <time.h>
+
+int errval;
 void CRC(char byte[17],char rem[9],char dividend[17],char divisor[10],char *quo,char *zeros);
 void CRC_gen(char input,char byte[17],char rem[9],char dividend[17],char divisor[10],char *quo,char *zeros);
    int sfd=-1;
+   int poll=-1;
+
+   int clientnum=0;
+
+
 int xor(char a, char b){
   if(a=='1'&&b=='1')
     return 0;
@@ -24,6 +32,11 @@ int xor(char a, char b){
 volatile sig_atomic_t flag = 0;
 void my_function(int sig){
   flag = 1; // set flag
+  if(poll!=-1)
+  {
+    write(poll,"~",1);
+    close(poll);
+  }
   if(sfd!=-1)
     close(sfd);
   //printf("cntrl C captured\n");//
@@ -38,6 +51,14 @@ void error(const char *msg)
 
 int main(int argc, char *argv[])
 {
+   srand(time(NULL));
+      float prob;
+      printf("Enter BER: ");
+      scanf("%f",&prob);
+      errval = prob*RAND_MAX;
+      if(errval<0)
+        errval = RAND_MAX;
+      //printf("%lf = errval\n",errval);
       signal(SIGINT, my_function);
      int sockfd, newsockfd, portno, pid;
      socklen_t clilen;
@@ -50,6 +71,7 @@ int main(int argc, char *argv[])
      sockfd = socket(AF_INET, SOCK_STREAM, 0);
      if (sockfd < 0) 
         error("ERROR opening socket");
+      sfd = sockfd;
      bzero((char *) &serv_addr, sizeof(serv_addr));
      portno = atoi(argv[1]);
      serv_addr.sin_family = AF_INET;
@@ -65,11 +87,13 @@ int main(int argc, char *argv[])
                (struct sockaddr *) &cli_addr, &clilen);
          if (newsockfd < 0) 
              error("ERROR on accept");
+        clientnum++;
          pid = fork();
          if (pid < 0)
              error("ERROR on fork");
          if (pid == 0)  {
              close(sockfd);
+             sfd = -1;
              dostuff(newsockfd);
              //printf("i am in vamsi\n");
              exit(0);
@@ -82,13 +106,13 @@ int main(int argc, char *argv[])
 void dostuff (int sock)
 {
   signal(SIGINT, my_function);
-  sfd=sock;
+  poll=sock;
    int n,i,j;
    int bit;
    char c;
    char buffer[256];
    char divisor[10]={'1','0','0','0','0','0','1','1','1','\0'};
-printf("the divisor is %s\n",divisor);
+//printf("the divisor is %s\n",divisor);
 char dividend[10];
 bzero(dividend,strlen(dividend));
 dividend[9]='\0';
@@ -102,12 +126,18 @@ char zeros[8];
 bzero(zeros,strlen(zeros));
 char byte[17];
 bzero(byte,strlen(byte));
-   while(1){
-   bzero(buffer,256);
-   n = read(sock,buffer,255);
-   if (n < 0) error("ERROR reading from socket");
-   printf("Here is the message: %s\n",buffer);
-
+//printf("Client %d: ",clientnum);
+while(1){
+ bzero(buffer,256);
+  n = read(sock,buffer,255);
+ if (n < 0) error("ERROR reading from socket");
+   //printf("Here is the message: %s\n",buffer);
+if(buffer[0] == '~')
+{
+  printf("Client %d closed the connection\n",clientnum);
+  close(sock);
+  exit(0);
+}
 int l=strlen(buffer);
 bzero(byte,strlen(byte));
 for(i=0;i<l;i++){
@@ -115,7 +145,7 @@ for(i=0;i<l;i++){
 }
         byte[16]='\0';
         int k;
-        printf("the byte is %s\n",byte);
+       // printf("the byte is %s\n",byte);
         for(k=0;k<9;k++){
           dividend[k]=byte[k];
           }
@@ -125,12 +155,42 @@ for(i=0;i<l;i++){
           if(rem[k]=='1')
             flag=1;
         }
-        if(flag==1){
+        //sleep(6);
+        if(flag==1)
+        {
           CRC_gen('&',byte,rem,dividend,divisor,quo,zeros);
+          for(k=0;k<16;k++)
+          {
+            if(rand()<=errval)
+              if(byte[k]=='1')
+                byte[k] = '0';
+              else
+                byte[k]='1';
+          }
           n=write(sock,byte,strlen(byte));
         }
         else{
           CRC_gen('$',byte,rem,dividend,divisor,quo,zeros);
+          char rec;
+          rec = 0;
+          for(k=0;k<8;k++)
+          {
+            if(buffer[k] == '1'){
+              rec = rec + 1;
+            }
+            if(k<7)
+            rec = rec << 1;
+          }
+          //rec = rec >> 1;
+          printf("client %d: %c\n",clientnum,rec);
+          for(k=0;k<16;k++)
+          {
+             if(rand()<errval)
+               if(byte[k]=='1')
+                 byte[k] = '0';
+               else
+                 byte[k]='1';
+          }
           n = write(sock,byte,strlen(byte));
         }
    if (n < 0) error("ERROR writing to socket");
@@ -138,7 +198,7 @@ for(i=0;i<l;i++){
 }
 void CRC(char byte[17],char rem[9],char dividend[17],char divisor[10],char *quo,char *zeros) {
         int k,j;
-        printf("the byte is %s\n",byte);
+        //printf("the byte is %s\n",byte);
         int scratch;
         for(j=0;j<8;j++){
             //printf("the ##########dividend is %s\n",dividend);
@@ -169,18 +229,18 @@ void CRC(char byte[17],char rem[9],char dividend[17],char divisor[10],char *quo,
             dividend[8]=byte[j+9];
 
         }
-        printf("the final remainder is %s\n",rem);
-        printf("the final quotient is %s\n",quo);
+        //printf("the final remainder is %s\n",rem);
+        //printf("the final quotient is %s\n",quo);
         for(k=0;k<9;k++)
             byte[k+7]=(xor(byte[k+7],rem[k])==1)?'1':'0';
 
-        printf("the message i am sending is %s\n",byte);
+        //printf("the message i am sending is %s\n",byte);
 }
 void CRC_gen(char input,char byte[17],char rem[9],char dividend[17],char divisor[10],char *quo,char *zeros) {
     char c;
     c=input;
     int bit,j,i;
-        printf("the character is %c\n",c);
+        //printf("the character is %c\n",c);
         bzero(byte,17);
         for(j=0;j<8;j++){
             bit=!!((c<<j)&0x80);
@@ -193,7 +253,7 @@ void CRC_gen(char input,char byte[17],char rem[9],char dividend[17],char divisor
                 byte[j]='0';
         byte[16]='\0';
         int k;
-        printf("the byte is %s\n",byte);
+        //printf("the byte is %s\n",byte);
         for(k=0;k<9;k++){
             dividend[k]=byte[k];
             }
@@ -227,10 +287,10 @@ void CRC_gen(char input,char byte[17],char rem[9],char dividend[17],char divisor
             dividend[8]=byte[j+9];
 
         }
-        printf("the final remainder is %s\n",rem);
-        printf("the final quotient is %s\n",quo);
+        //printf("the final remainder is %s\n",rem);
+        //printf("the final quotient is %s\n",quo);
         for(k=0;k<9;k++)
             byte[k+7]=(xor(byte[k+7],rem[k])==1)?'1':'0';
 
-        printf("the message i am sending is %s\n",byte);
+        //printf("the message i am sending is %s\n",byte);
 }
