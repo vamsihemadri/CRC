@@ -4,8 +4,8 @@ DONE:
 concurrent server.
 message converted into bits before sending.
 implement soft closing of ports in server.(graceful release of open socket.)
+implemented CRC.
 
- To do:
- implement CRC.
+ TO DO:
  implement inclusion of errors .
  implement timer in client.
