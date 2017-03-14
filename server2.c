@@ -11,6 +11,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <signal.h> 
+void CRC(char byte[17],char rem[9],char dividend[17],char divisor[10],char *quo,char *zeros);
+void CRC_gen(char input,char byte[17],char rem[9],char dividend[17],char divisor[10],char *quo,char *zeros);
+   int sfd=-1;
 int xor(char a, char b){
   if(a=='1'&&b=='1')
     return 0;
@@ -21,6 +24,8 @@ int xor(char a, char b){
 volatile sig_atomic_t flag = 0;
 void my_function(int sig){
   flag = 1; // set flag
+  if(sfd!=-1)
+    close(sfd);
   //printf("cntrl C captured\n");//
   exit(0);
 }
@@ -69,7 +74,7 @@ int main(int argc, char *argv[])
              //printf("i am in vamsi\n");
              exit(0);
          }
-         else close(newsockfd);
+         else {sfd=sockfd;close(newsockfd);}
      } /* end of while */
      close(sockfd);
      return 0; /* we never get here */
@@ -77,6 +82,7 @@ int main(int argc, char *argv[])
 void dostuff (int sock)
 {
   signal(SIGINT, my_function);
+  sfd=sock;
    int n,i,j;
    int bit;
    char c;
@@ -101,7 +107,9 @@ bzero(byte,strlen(byte));
    n = read(sock,buffer,255);
    if (n < 0) error("ERROR reading from socket");
    printf("Here is the message: %s\n",buffer);
+
 int l=strlen(buffer);
+bzero(byte,strlen(byte));
 for(i=0;i<l;i++){
         byte[i]=buffer[i];
 }
@@ -111,58 +119,118 @@ for(i=0;i<l;i++){
         for(k=0;k<9;k++){
           dividend[k]=byte[k];
           }
-        int scratch;
-        for(j=0;j<8;j++){
-          //printf("the ##########dividend is %s\n",dividend);
-          if(dividend[0]=='1'){
-            //printf("for once i am inside this\n");
-            for(k=0;k<9;k++){
-              scratch=xor(dividend[k],divisor[k]);
-    
-              rem[k]=(scratch==1)?'1':'0';
-            }
-            //printf("the ##########inner remainder is %s\n",rem);
-            quo[j]='1';
-          }
-          else{
-            //printf("the ##########dividend is %s\n",dividend);
-            for(k=0;k<9;k++){
-                scratch=xor(dividend[k],zeros[k]);
-              //printf("the scratch is %d \n",scratch);
-              rem[k]=(scratch==1)?'1':'0';
-            }
-            //printf("the ##########inner remainder is %s\n",rem);
-            quo[j]='0';
-          }
-          for(k=0;k<8;k++)
-            dividend[k]=rem[k+1];
-          //printf("the ##########dividend is %s\n",dividend);
-          if(j!=8)
-          dividend[8]=byte[j+9];
-
-        }
-        printf("the final remainder is %s\n",rem);
-        printf("the final quotient is %s\n",quo);
-        for(k=0;k<9;k++)
-          byte[k+7]=(xor(byte[k+7],rem[k])==1)?'1':'0';
-        //printf("the length of rem is %d\n",strlen(rem));
+        CRC(byte,rem,dividend,divisor,quo,zeros);
         int flag=0;
         for(k=0;k<strlen(rem);k++){
           if(rem[k]=='1')
             flag=1;
         }
-        if(flag==1)
-          n=write(sock,"NACK",1);
+        if(flag==1){
+          CRC_gen('&',byte,rem,dividend,divisor,quo,zeros);
+          n=write(sock,byte,strlen(byte));
+        }
         else{
-          n = write(sock,"ACK",3);
+          CRC_gen('$',byte,rem,dividend,divisor,quo,zeros);
+          n = write(sock,byte,strlen(byte));
         }
    if (n < 0) error("ERROR writing to socket");
-   if(flag){
-    printf("Signal Caught\n");
-    shutdown(sock,SHUT_WR);//disables further send operations.
-    read(sock,buffer,256);//read if still data present.
-    close(sock);//finally closing the socket.
-    exit(0);
-    return;
-   }
-}}
+}
+}
+void CRC(char byte[17],char rem[9],char dividend[17],char divisor[10],char *quo,char *zeros) {
+        int k,j;
+        printf("the byte is %s\n",byte);
+        int scratch;
+        for(j=0;j<8;j++){
+            //printf("the ##########dividend is %s\n",dividend);
+            if(dividend[0]=='1'){
+                //printf("for once i am inside this\n");
+                for(k=0;k<9;k++){
+                    scratch=xor(dividend[k],divisor[k]);
+    
+                    rem[k]=(scratch==1)?'1':'0';
+                }
+                //printf("the ##########inner remainder is %s\n",rem);
+                quo[j]='1';
+            }
+            else{
+                //printf("the ##########dividend is %s\n",dividend);
+                for(k=0;k<9;k++){
+                        scratch=xor(dividend[k],zeros[k]);
+                    //printf("the scratch is %d \n",scratch);
+                    rem[k]=(scratch==1)?'1':'0';
+                }
+                //printf("the ##########inner remainder is %s\n",rem);
+                quo[j]='0';
+            }
+            for(k=0;k<8;k++)
+                dividend[k]=rem[k+1];
+            //printf("the ##########dividend is %s\n",dividend);
+            if(j!=8)
+            dividend[8]=byte[j+9];
+
+        }
+        printf("the final remainder is %s\n",rem);
+        printf("the final quotient is %s\n",quo);
+        for(k=0;k<9;k++)
+            byte[k+7]=(xor(byte[k+7],rem[k])==1)?'1':'0';
+
+        printf("the message i am sending is %s\n",byte);
+}
+void CRC_gen(char input,char byte[17],char rem[9],char dividend[17],char divisor[10],char *quo,char *zeros) {
+    char c;
+    c=input;
+    int bit,j,i;
+        printf("the character is %c\n",c);
+        bzero(byte,17);
+        for(j=0;j<8;j++){
+            bit=!!((c<<j)&0x80);
+            if(bit==1)
+                byte[j]='1';
+            else
+                byte[j]='0';
+        }
+            for(j=8;j<16;j++)
+                byte[j]='0';
+        byte[16]='\0';
+        int k;
+        printf("the byte is %s\n",byte);
+        for(k=0;k<9;k++){
+            dividend[k]=byte[k];
+            }
+        int scratch;
+        for(j=0;j<8;j++){
+            //printf("the ##########dividend is %s\n",dividend);
+            if(dividend[0]=='1'){
+                //printf("for once i am inside this\n");
+                for(k=0;k<9;k++){
+                    scratch=xor(dividend[k],divisor[k]);
+    
+                    rem[k]=(scratch==1)?'1':'0';
+                }
+                //printf("the ##########inner remainder is %s\n",rem);
+                quo[j]='1';
+            }
+            else{
+                //printf("the ##########dividend is %s\n",dividend);
+                for(k=0;k<9;k++){
+                        scratch=xor(dividend[k],zeros[k]);
+                    //printf("the scratch is %d \n",scratch);
+                    rem[k]=(scratch==1)?'1':'0';
+                }
+                //printf("the ##########inner remainder is %s\n",rem);
+                quo[j]='0';
+            }
+            for(k=0;k<8;k++)
+                dividend[k]=rem[k+1];
+            //printf("the ##########dividend is %s\n",dividend);
+            if(j!=8)
+            dividend[8]=byte[j+9];
+
+        }
+        printf("the final remainder is %s\n",rem);
+        printf("the final quotient is %s\n",quo);
+        for(k=0;k<9;k++)
+            byte[k+7]=(xor(byte[k+7],rem[k])==1)?'1':'0';
+
+        printf("the message i am sending is %s\n",byte);
+}

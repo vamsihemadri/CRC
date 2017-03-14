@@ -7,6 +7,10 @@
 #include <netinet/in.h>
 #include <netdb.h> 
 #include <signal.h> 
+#include <time.h>
+//#include <rand.h>
+void CRC(char byte[17],char rem[9],char dividend[17],char divisor[10],char *quo,char *zeros);
+void CRC_gen(char input,char byte[17],char rem[9],char dividend[17],char divisor[10],char *quo,char *zeros);
 int xor(char a, char b){
     if(a=='1'&&b=='1')
         return 0;
@@ -80,7 +84,99 @@ int main(int argc, char *argv[])
     char zeros[8];
     bzero(zeros,strlen(zeros));
     for(i=0;i<l;i++){
-        c=input[i];
+        bzero(byte,strlen(byte));
+        bzero(rem,strlen(rem));
+        CRC_gen(input[i],byte,rem,dividend,divisor,quo,zeros);
+        n = write(sockfd,byte,strlen(byte));
+        if (n < 0) 
+             error("ERROR writing to socket");
+        bzero(buffer,256);
+        n = read(sockfd,buffer,255);
+        if (n < 0) 
+             error("ERROR reading from socket");
+        //printf("the value read is %s\n",buffer);
+         int len=strlen(buffer);
+        bzero(byte,strlen(byte));
+        int m;
+        for(m=0;m<len;m++){
+          byte[m]=buffer[m];
+        }
+                byte[16]='\0';
+        int k;
+        printf("the byte is %s\n",byte);
+        for(k=0;k<9;k++){
+          dividend[k]=byte[k];
+          }
+         CRC(byte,rem,dividend,divisor,quo,zeros);
+         k=strlen(rem);
+         int check=0;
+         for(m=0;m<k;m++){
+            if(rem[m]=='1')
+                check=1;
+         }
+         k=strlen(byte);
+         if(check==0){
+            k=strcmp(byte,"0010010011111100");
+            if(k==0){
+                printf("the value read is %s\n",buffer);
+                }
+            else{
+                printf("the value read is NACK\n");
+                i=i-1;
+            }
+        }
+        else
+            i=i-1;
+        printf("%s\n",buffer);
+    }
+    }
+    close(sockfd);
+    return 0;
+}
+void CRC(char byte[17],char rem[9],char dividend[17],char divisor[10],char *quo,char *zeros) {
+        int k,j;
+        printf("the byte is %s\n",byte);
+        int scratch;
+        for(j=0;j<8;j++){
+            //printf("the ##########dividend is %s\n",dividend);
+            if(dividend[0]=='1'){
+                //printf("for once i am inside this\n");
+                for(k=0;k<9;k++){
+                    scratch=xor(dividend[k],divisor[k]);
+    
+                    rem[k]=(scratch==1)?'1':'0';
+                }
+                //printf("the ##########inner remainder is %s\n",rem);
+                quo[j]='1';
+            }
+            else{
+                //printf("the ##########dividend is %s\n",dividend);
+                for(k=0;k<9;k++){
+                        scratch=xor(dividend[k],zeros[k]);
+                    //printf("the scratch is %d \n",scratch);
+                    rem[k]=(scratch==1)?'1':'0';
+                }
+                //printf("the ##########inner remainder is %s\n",rem);
+                quo[j]='0';
+            }
+            for(k=0;k<8;k++)
+                dividend[k]=rem[k+1];
+            //printf("the ##########dividend is %s\n",dividend);
+            if(j!=8)
+            dividend[8]=byte[j+9];
+
+        }
+        printf("the final remainder is %s\n",rem);
+        printf("the final quotient is %s\n",quo);
+        for(k=0;k<9;k++)
+            byte[k+7]=(xor(byte[k+7],rem[k])==1)?'1':'0';
+
+        printf("the message i am sending is %s\n",byte);
+}
+void CRC_gen(char input,char byte[17],char rem[9],char dividend[17],char divisor[10],char *quo,char *zeros) {
+    char c;
+    c=input;
+    int bit,j,i;
         printf("the character is %c\n",c);
         bzero(byte,17);
         for(j=0;j<8;j++){
@@ -134,25 +230,4 @@ int main(int argc, char *argv[])
             byte[k+7]=(xor(byte[k+7],rem[k])==1)?'1':'0';
 
         printf("the message i am sending is %s\n",byte);
-
-        n = write(sockfd,byte,strlen(byte));
-        if (n < 0) 
-             error("ERROR writing to socket");
-        bzero(buffer,256);
-        n = read(sockfd,buffer,255);
-        if (n < 0) 
-             error("ERROR reading from socket");
-        //printf("the value read is %s\n",buffer);
-        if(!strcmp(buffer,"ACK")){
-            printf("the value read is %s\n",buffer);
-            }
-        else{
-            printf("the value read is NACK\n");
-            i=i-1;
-        }
-        printf("%s\n",buffer);
-    }
-    }
-    close(sockfd);
-    return 0;
 }
